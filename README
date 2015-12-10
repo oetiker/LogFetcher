@@ -1,0 +1,11 @@
+LogFetcher
+==========
+Version: #VERSION#
+Date: #DATE#
+
+Use SSH to fetch log files from a configurable list of machines and store them locally
+takeing into account that the logfiles on the remote hosts are rotated
+
+Enjoy!
+
+Tobias Oetiker <tobi@oetiker.ch>
