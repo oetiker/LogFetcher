@@ -4,11 +4,9 @@ use Mojo::Base -base;
 use Mojo::JSON qw(decode_json);
 use Mojo::Util qw(slurp);
 use Carp qw(croak);
-use List::Util qw(max);
 use Mojo::Exception;
 use Data::Processor;
 use Data::Processor::ValidatorFactory;
-use N3KCommon;
 
 =head1 NAME
 
@@ -45,10 +43,6 @@ has validator => sub {
     Data::Processor->new(shift->schema);
 };
 
-has n3kCommon => sub {
-    N3KCommon->new;
-};
-
 =head2 file
 
 the path of the config file
@@ -69,148 +63,74 @@ the flattened content of the config file
 
 use Data::Dumper;
 
+my $CONSTANT_RE = '[_A-Z]+';
 
 has schema => sub {
     my $self = shift;
     my $vf = $self->validatorFactory;
     my $string = $vf->rx('^\S+$','expected a string');
     my $integer = $vf->rx('^\d+$','expected an integer');
-    my $float = $vf->rx('^\d+(\.\d+)?$','expected a floatingpoint number');
-    my $dskey = '[-_a-zA-Z0-9]+';
-    my $transformer = $self->n3kCommon->transformer;
+
     return {
         GENERAL => {
             description => 'general settings',
             members => {
-                log_file => {
+                logFile => {
                     validator => $vf->file('>>','writing'),
                     description => 'absolute path to log file',
                 },
-                cachedb => {
-                    validator => $vf->file('>>','writing'),
-                    description => 'absolute path to cache (sqlite) database file',
+                logLevel => {
+                    validator => $vf->rx('(?:debug|info|warn|error|fatal)','Pick a logLevel of debug, info, warn, error or fatal'),
+                    description => 'mojo log level - debug, info, warn, error or fatal'
                 },
-                history => {
-                    default => '1d',
-                    description => 'time to keep history in cache database. specify in s m h d',
-                    example => '3h',
-                    transformer => $transformer->{timespec}(
-                        'specify cachedb history retention in seconds or append d,m,h to the number'),
-                },
-                nodeid => {
-                    description => "the node id ... aka hostname"
-                },
-                mib_path => {
-                    optional => 1,
-                    description => "an array of directories to scour for mib files",
-                    array => 1,
+                interval => {
+                    description => 'log check interval in seconds',
+                    validator => $integer,
+                }
+            }
+        },
+        CONSTANTS => {
+            description => 'define constants fo be used in globPattern and destinationFile properties.',
+            optional => 1,
+            members => {
+                $CONSTANT_RE => {
+                    regex => 1,
+                    description => 'value of the constant',
                     validator => $string,
-                },
-                load_mib => {
-                    optional => 1,
-                    description => "array of mibs to load (use the mib internal names)",
+                }
+            }
+
+        },
+        HOSTS => {
+            description => 'where does our data come from.',
+            array => 1,
+            members => {
+                sshConnect => {
+                    description => 'ssh arguments',
                     array => 1,
-                    validator => $string,
+                    validator => $string
                 },
-                silo_push_interval => {
-                    description => "how frequently to send data to the silo. specify in s m h d",
-                    default => '10',
-                    example => '1m',
-                    transformer => $transformer->{timespec}(
-                        'specify silo_push_interval in seconds or append d,m,h to the number'),
-                },
-                silos => {
-                    description => 'silos store collected data',
-                    # "members" stands for all "non-internal" fields
+                logFiles => {
+                    description => 'a map of globs on the remote machine',
+                    array => 1,
                     members => {
-                        '.+' => {
-                            regex => 1,
-                            members => {
-                                url => {
-                                    validator    =>  $vf->rx(qr{^https?://.*},'expected a http url'),
-                                    description => 'url of the silo server. Only https:// allowed',
-                                },
-                                shared_secret => {
-                                    description => 'shared secret to authenticate node',
-                                    validator => $string
-                                }
-                            }
+                        globPattern => {
+                            description => 'a glob pattern to find all rotated logfile versions on the remote hosts. you can use ${CONSTANTS}',
+                            validator => $string
+                        },
+                        filterRegexp => {
+                            optional => 1,
+                            description => 'a regular expression to filter the files found by the globPattern',
+                            validator => $string
+                        },
+                        destinationFile => {
+                            description => 'where to store the file you can use ${CONSTANTS} and strftime formatting',
+                            validator => $string
                         }
                     }
                 }
             }
         },
-        DATASTORE => $self->n3kCommon->dataStoreSchema,
-        DATASOURCE => {
-            description => 'data sources are stored in a three level hierarchic. When',
-            members => {
-                $dskey => {
-                    regex => 1,
-                    members => {
-                        $dskey => {
-                            regex => 1,
-                            members => {
-                                $dskey => {
-                                    regex => 1,
-                                    members => {
-                                        datastore => {
-                                            description => 'Which data store to use for the results of the probe. The DataStore can be defined locally or on the silo. If the same key is defined at both ends, the silo definition gets preference.',
-                                            validator => $string,
-                                        },
-                                        type => {
-                                            description => 'Data source type',
-                                            validator => $vf->any(qw(DERIVE COUNTER GAUGE)),
-                                        },
-                                        step => {
-                                            description => 'Interval for running this probe. Make sure the data store you choose is prepared to accept data at this interval.',
-                                            default => '10',
-                                            example => '10s',
-                                            transformer => $transformer->{timespec}(
-                                                'specify step in seconds or append d,m,h to the number'),
-                                        },
-                                        probe_cfg => {
-                                            description => 'probe config ... we use a schema provided by the probe to validate this.'
-                                        },
-                                        probe => {
-                                            description => 'Probe Module to load for this section',
-                                            transformer => sub {
-                                                my ($value,$parent) = @_;
-                                                return {
-                                                    name => $value,
-                                                    obj => $self->loadProbe($value,$parent->{probe_cfg}),
-                                                };
-                                            },
-                                            # a list of values to use when generating documentation
-                                            # so that all plug-ins can be loaded artificially
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        GRAPHTEMPLATE => {
-            description => 'chart templates for use on the silo in connection with the data from this node',
-            members => {
-                $dskey => {
-                    regex => 1,
-                    members => {
-                        $dskey => {
-                            regex => 1,
-                            members => {
-                                $dskey => {
-                                    regex => 1,
-                                    description => 'chart definition',
-                                    members => $self->n3kCommon->chartSchema,
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     };
 };
 
@@ -234,9 +154,10 @@ access the config hash
 
 has cfgHash => sub {
     my $self = shift;
-    my $cfg = $self->n3kCommon->loadJSONCfg($self->file);
+    my $cfg = $self->loadJSONCfg($self->file);
     # we need to set this real early to catch all the info in the logfile.
-    $self->app->log->path($cfg->{GENERAL}{log_file});
+    $self->app->log->path($cfg->{GENERAL}{logFile});
+    $self->app->log->level($cfg->{GENERAL}{logLevel});
     my $validator = $self->validator;
     my $hasErrors;
     my $err = $validator->validate($cfg);
@@ -244,91 +165,66 @@ has cfgHash => sub {
         warn "$_\n";
         $hasErrors = 1;
     }
-    for my $section (qw(DATASOURCE GRAPHTEMPLATE)){
-        my %secFlat;
-        my $sec = $cfg->{$section};
-        for my $k1 (keys %{$sec}){
-            for my $k2 (keys %{$sec->{$k1}}){
-                for my $k3 (keys %{$sec->{$k1}{$k2}}){
-                    $secFlat{"$k1/$k2/$k3"} = $sec->{$k1}{$k2}{$k3};
+    if (my $const = $cfg->{CONSTANTS}){
+        my $CONST_MATCH = join('|',keys %$const);
+        for my $host (@{$cfg->{HOSTS}}){
+            for my $logFile (@{$host->{logFiles}}){
+                for my $key (qw(globPattern destinationFile)){
+                    $logFile->{$key} =~ s/\${($CONST_MATCH)}/$const->{$1}/g;
                 }
             }
         }
-        $cfg->{$section} = \%secFlat;
     }
     die "Can't continue with config errors\n" if $hasErrors;
-    $cfg->{CONFIG_CTIME} = +(stat $self->file)[10];
     return $cfg;
-};
-
-=head2 probePath
-
-where should be go looking for probe modules ?
-
-=cut
-
-has probePath => sub {
-    ['N3KHarvester::Probe'];
-};
-
-=head2 probeInventory
-
-returns a hash with probe names an associated files
-
-=cut
-
-has probeInventory => sub {
-    my $self   = shift;
-    my $probePath = $self->probePath;
-    my %probes;
-    for my $path (@INC){
-        for my $pPath (@$probePath) {
-            my @pDirs = split /::/, $pPath;
-            my $fPath = File::Spec->catdir($path, @pDirs, '*.pm');
-            for my $file (sort glob($fPath)) {
-                my ($volume, $modulePath, $moduleName) = File::Spec->splitpath($file);
-                $moduleName =~ s{\.pm$}{};
-                $probes{$moduleName} = $pPath.'::'.$moduleName;
-                # it seems better to just load them all
-                # instead of trying to load 'on demand'
-                require $file;
-            }
-        }
-    }
-    return \%probes;
 };
 
 =head1 METHODS
 
 All the methods of L<Mojo::Base> as well as:
 
-=head2 B<loadProbe>('ProbeModule')
+=head2 loadJSONCfg(file)
 
-Find the given module in the F<probePath>, load it and create an instance.
+Load the given config, sending error messages to stdout and igonring /// lines as comments
 
 =cut
 
-sub loadProbe {
-    my $self   = shift;
-    my $probe_name = shift;
-    my $cfg = shift;
-    my $module = $self->probeInventory->{$probe_name} or do {
-        $self->log->error("Probe module $probe_name not found");
-    };
-    no strict 'refs';
-    my $probe_obj = "$module"->new(
-        app => $self->app,
-        rawCfg => $self->rawCfg
-    );
-    my $validator = Data::Processor->new($probe_obj->schema);
-    my $err = $validator->validate($cfg);
-    for ($err->as_array){
-        die {msg => $_};
+sub loadJSONCfg {
+    my $self = shift;
+    my $file = shift;
+    my $json = slurp($file);
+    $json =~ s{^\s*//.*}{}gm;
+    my $raw_cfg = eval { decode_json($json) };
+    if ($@){
+        if ($@ =~ /(.+?) at line (\d+), offset (\d+)/){
+            my $warning = $1;
+            my $line = $2;
+            my $offset = $3;
+            open my $json, '<', $file;
+            my $c =0;
+            warn "Reading ".$file."\n";
+            warn "$warning\n\n";
+            while (<$json>){
+                chomp;
+                $c++;
+                if ($c == $line){
+                    warn ">-".('-' x $offset).'.'."  line $line\n";
+                    warn "  $_\n";
+                    warn ">-".('-' x $offset).'^'."\n";
+                }
+                elsif ($c+3 > $line and $c-3 < $line){
+                    warn "  $_\n";
+                }
+            }
+            warn "\n";
+            exit 1;
+        }
+        else {
+            Mojo::Exception->throw("Reading ".$file.': '.$@);
+        }
     }
-    $probe_obj->cfg($cfg);
-    return $probe_obj;
+    return $raw_cfg;
 }
-
 
 
 1;
@@ -337,7 +233,7 @@ __END__
 
 =head1 COPYRIGHT
 
-Copyright (c) 2014 by OETIKER+PARTNER AG. All rights reserved.
+Copyright (c) 2015 by OETIKER+PARTNER AG. All rights reserved.
 
 =head1 LICENSE
 

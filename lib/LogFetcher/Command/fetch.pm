@@ -1,6 +1,7 @@
 package LogFetcher::Command::fetch;
 use Mojo::Base 'Mojolicious::Command';
 use Getopt::Long 2.25 qw(:config posix_default no_ignore_case);
+use LogFetcher::HostChannel;
 
 =head1 NAME
 
@@ -8,15 +9,13 @@ LogFetcher::Command::sync - Ptp2Fibu3 syncer
 
 =head1 SYNOPSIS
 
- ./logfetcher.pl sync
+ ./logfetcher.pl fetch
 
 =head1 DESCRIPTION
 
 Run the fibu3 syncer
 
 =cut
-
-use Mojo::UserAgent;
 
 has description => <<'EOF';
 copy rotating logfiles from a remote machine to a local archive
@@ -35,14 +34,28 @@ EOF
 my %opt;
 
 has log => sub { shift->app->log };
+has cfg => sub { shift->app->config->cfgHash };
+
 
 sub run {
     my $self   = shift;
     local @ARGV = @_ if @_;
     GetOptions(\%opt, 'daemon|d', 'noaction|no-action|n', 'verbose|v');
-
-    $self->log->level('debug') if $opt{verbose};
-
+    if ($opt{verbose}){
+        $self->log->level('debug');
+        $self->app->log->handle(\*STDOUT);
+    }
+    my $app = $self->app;
+    my @c;
+    for my $host (@{$self->cfg->{HOSTS}}){
+        my $channel = LogFetcher::HostChannel->new(%$host,log=>$self->log);
+        Mojo::IOLoop->timer( $self->cfg->{GENERAL}{interval} => sub {
+            $channel->fetch;
+        });
+        $channel->fetch();
+        push @c,$channel;
+    }
+    Mojo::IOLoop->start;
     return $self;
 }
 

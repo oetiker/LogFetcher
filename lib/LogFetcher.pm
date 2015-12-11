@@ -1,6 +1,7 @@
 package LogFetcher;
 
 use Mojo::Base 'Mojolicious';
+use LogFetcher::Config;
 
 =head1 NAME
 
@@ -29,9 +30,18 @@ use our own plugin directory and our own configuration file:
 
 =cut
 
+has config => sub {
+    my $app = shift;
+    LogFetcher::Config->new(
+        app => $app,
+        file => $ENV{LOGFETCHER_CFG} || $app->home->rel_file('etc/logfetcher.cfg' )
+    );
+};
+
+
 sub startup {
-    my $self = shift;
-    @{$self->commands->namespaces} = (__PACKAGE__.'::Command');
+    my $app = shift;
+    @{$app->commands->namespaces} = (__PACKAGE__.'::Command');
 }
 
 1;

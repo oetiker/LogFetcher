@@ -9,5 +9,5 @@ use POSIX qw(locale_h);
 setlocale(LC_NUMERIC, "C");use strict;
 use Mojolicious::Commands;
 
-Mojolicious::Commands->start_app('Ptp2Fibu3');
+Mojolicious::Commands->start_app('LogFetcher');
 __END__
