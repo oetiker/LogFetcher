@@ -109,7 +109,7 @@ my $checkTimeStamp = sub {
         }
     });
     my $timeout = Mojo::IOLoop->timer(5 => sub {
-        $checkFork->kill();
+        $checkFork->kill(9);
         delete $forkCache{"$checkFork"};
         $abort->("stamp check $src: TIMEOUT");
     });
@@ -183,7 +183,7 @@ my $transferFile = sub {
         my $abort = sub {
                 my $error = shift;
                 $delay->data('error',$error);
-                $transferFork->kill;
+                $transferFork->kill(9);
                 delete $taskCache{"$transferFork"};
                 delete $taskCache{"$delay"};
                 unlink $working;
@@ -291,7 +291,7 @@ sub fetch {
     Mojo::IOLoop->timer(5 => sub {
         if ($self->waitingForStat){
             $self->log->error('hostChannel not reacting anymore ... lets get a new one.');
-            $self->hostChannel->kill();
+            $self->hostChannel->kill(9);
             $self->hostChannel($self->$makeHostChannel());
         };
     });
