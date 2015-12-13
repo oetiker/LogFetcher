@@ -52,13 +52,13 @@ a L<Mojo::Log> object
 
 has 'log';
 
-=head2 hostControl
+=head2 hostChannel
 
 a L<Mojo::IOLoop::ReadWriteFork> instance connected to the remote host
 
 =cut
 
-has 'hostControl';
+has 'hostChannel';
 
 =head1 METHODS
 
@@ -89,59 +89,147 @@ my $makePath = sub {
     }
 };
 
-my $fetchFile = sub {
+my $checkTimeStamp = sub {
     state %forkCache;
     my $self = shift;
     my $src = shift;
+    my $timeStamp = shift;
+    my $endCheck = shift;
+    my $abort = shift;
+    my $checkFork = Mojo::IOLoop::ReadWriteFork->new;
+    $forkCache{"$checkFork"} = $checkFork;
+    my $remoteTimeStamp = 99;
+    my $read = '';
+
+    $checkFork->on(read => sub {
+        my $checkFork = shift;
+        $read .= shift;
+        if ($read =~ /<(\d+)>/){
+            $remoteTimeStamp = $1;
+        }
+    });
+    my $timeout = Mojo::IOLoop->timer(5 => sub {
+        $checkFork->kill();
+        delete $forkCache{"$checkFork"};
+        $abort->("stamp check $src: TIMEOUT");
+    });
+
+    $checkFork->on(close => sub {
+        Mojo::IOLoop->remove($timeout);
+        my $checkFork = shift;
+        delete $forkCache{"$checkFork"};
+        if ($remoteTimeStamp == $timeStamp){
+            $self->log->debug("timestamp check $src: verification ok");
+            $endCheck->();
+        }
+        else {
+            $abort->("timestamp check $src: timestamp is $remoteTimeStamp and not $timeStamp as expected.");
+        }
+    });
+    $checkFork->on(error => sub {
+        my $checkFork = shift;
+        my $error = shift;
+        delete $forkCache{"$checkFork"};
+        $abort->("stamp check $src: $error");
+    });
+    my $cmd = "stat --format='<%Y>' $src";
+    my @sshArgs = (@{$self->sshConnect},qw(-T -x -y),$cmd);
+    $self->log->debug('ssh '.join(' ',@sshArgs));
+    $checkFork->start(
+        program => 'ssh',
+        program_args => \@sshArgs,
+    );
+
+};
+
+my $transferFile = sub {
+    state %taskCache;
+    my $self = shift;
+    my $src = shift;
     my $dest = shift;
-    my $started = 0;
+    my $timeStamp = shift;
+    my $transferStarted = 0;
     my $working = $dest.'.working';
     $self->$makePath($working);
     my $out;
     if (open $out, '>>', $working and flock($out,LOCK_EX)){
-        my $fork = Mojo::IOLoop::ReadWriteFork->new;
-        $fork->on(read => sub {
-            my $fork = shift;
-            my $chunk = shift;
-            if (not $started){
-                $self->log->debug("fetch $src $dest first byte");
-                $started = 1;
-            }
-            syswrite $out,$chunk;
-        });
-        $fork->on(close => sub {
-            my $fork = shift;
-            my $exitValue = shift;
-            my $signal = shift;
-            if ($exitValue == 0 and not $signal){
+        my $transferFork = Mojo::IOLoop::ReadWriteFork->new;
+        $taskCache{"$transferFork"} = $transferFork;
+
+        my $delay = Mojo::IOLoop->delay(sub {
+            my $delay = shift;
+            my $ok = ( not $delay->data('error')
+                and $delay->data('exitValue') == 0
+                and not $delay->data('signal'));
+            if ($ok){
                 rename $working,$dest;
-                $self->log->debug("fetch $src $dest complete");
-            }
-            else {
-                $self->log->error("fetch $src $dest failed with exit code $exitValue");
+                $self->log->debug("fetch $src $dest SUCCESS");
                 unlink $working;
             }
+            else {
+                $self->log->error("fetch $src $dest FAILED");
+            }
             flock($out, LOCK_UN);
             close($out);
-            delete $forkCache{"$fork"};
+            # the fork is not needed anymore it can be destroyed now
+            delete $taskCache{"$transferFork"};
+            delete $taskCache{"$delay"};
         });
-        $fork->on(error => sub {
-            my $fork = shift;
+        $taskCache{"$delay"} = $delay;
+
+        my $endTransfer = $delay->begin();
+        my $endCheck = $delay->begin();
+
+        my $abort = sub {
+                my $error = shift;
+                $delay->data('error',$error);
+                $transferFork->kill;
+                delete $taskCache{"$transferFork"};
+                delete $taskCache{"$delay"};
+                unlink $working;
+                $self->log->error("$error");
+        };
+
+        my $timeoutHandler = sub {
+            $abort->("fetch $src $dest: TIMEOUT");
+        };
+        my $timeoutId = Mojo::IOLoop->timer(5 => $timeoutHandler);
+        $transferFork->on(read => sub {
+            my $transferFork = shift;
+            my $chunk = shift;
+            if (not $transferStarted){
+                $self->log->debug("fetch $src $dest first byte");
+                $transferStarted = 1;
+                $self->$checkTimeStamp($src,$timeStamp,$endCheck,$abort);
+            }
+            Mojo::IOLoop->remove($timeoutId);
+            $timeoutId = Mojo::IOLoop->timer(5 => $timeoutHandler);
+            syswrite $out,$chunk;
+        });
+        $transferFork->on(close => sub {
+            my $transferFork = shift;
+            my $exitValue = shift;
+            my $signal = shift;
+            $delay->data(exitValue => $exitValue);
+            $delay->data(signal => $signal);
+            $endTransfer->();
+        });
+        $transferFork->on(error => sub {
+            my $transferFork = shift;
             my $error = shift;
             $self->log->error("fetch $src $dest: $error");
-            unlink $dest.'.working';
-            flock($out, LOCK_UN);
-            close($out);
-            delete $forkCache{"$fork"};
+            delete $taskCache{"$transferFork"};
+            $abort->();
         });
         my $cmd = 'gzip -c '.$src;
-        $self->log->info('Open SSH Channel: '.join(' ',@{$self->sshConnect},qw(-T -x -y),$cmd));
-        $fork->start(
+        my @sshArgs = (@{$self->sshConnect},qw(-T -x -y),$cmd);
+        $self->log->debug('ssh '.join(' ',@sshArgs));
+        $transferFork->start(
             program => 'ssh',
-            program_args => [@{$self->sshConnect},qw(-T -x -y),$cmd],
-            conduit => 'pipe'
+            program_args => \@sshArgs,
+            conduit => 'pipe',
         );
-        $forkCache{"$fork"} = $fork;
+
     }
     else {
         $self->log->warn("fetch $working already in progress. skipping");
@@ -149,52 +237,64 @@ my $fetchFile = sub {
 };
 
 # open a new fork
-my $makeHostControl = sub {
+has waitingForStat => 0;
+
+my $makeHostChannel;
+$makeHostChannel = sub {
     my $self = shift;
-    my $fork = Mojo::IOLoop::ReadWriteFork->new;
+    my $controlFork = Mojo::IOLoop::ReadWriteFork->new;
     my $read;
-    my @forks;
-    $fork->on(read => sub {
+    $controlFork->on(read => sub {
         $read .= $_[1];
         while ( $read =~ s/^.*?<LOG_FILE><(\d+)><(\d+)><(.+?)><NL>//s ){
+            $self->waitingForStat(0);
             my ($id,$time,$file) = ($1,$2,$3);
             my $filter = $self->logFiles->[$id]{filterRegexp};
             next if $filter and $file !~ $filter;
             my $dest = strftime($self->logFiles->[$id]{destinationFile},localtime($time));
             if (not -f $dest){
-                push @forks,$self->$fetchFile($file,$dest);
+                $self->$transferFile($file,$dest,$time);
             }
         }
     });
-    $fork->on(close => sub {
-        $self->hostControl(undef);
+    $controlFork->on(close => sub {
+        $self->log->error('Host Channel Closed');
+        $self->hostChannel($self->$makeHostChannel());
     });
-    $fork->on(error => sub {
-        $self->hostControl(undef);
+    $controlFork->on(error => sub {
+        $self->log->error('Host Channel Closed');
+        $self->hostChannel($self->$makeHostChannel());
     });
-    $fork->start(
+    $controlFork->start(
         program => 'ssh',
         program_args => $self->sshConnect,
         conduit => 'pty'
     );
-    return $fork;
+
+    return $controlFork;
 };
 
-
+has hostChannel => sub {
+    shift->$makeHostChannel();
+};
 
 sub fetch {
     my $self = shift;
-    if (not $self->hostControl){
-        $self->log->info('Open SSH Channel: '.join(' ',@{$self->sshConnect}));
-        $self->hostControl($self->$makeHostControl());
-    }
     my $logFiles = $self->logFiles;
     for (my $id = 0;$id < scalar @$logFiles;$id++){
-        $self->hostControl->write("stat --format='<LOG_FILE><$id><%Y><%n><NL>' "
+        $self->hostChannel->write("stat --format='<LOG_FILE><$id><%Y><%n><NL>' "
             . $logFiles->[$id]{globPattern}
             ."\n"
         );
     }
+    $self->waitingForStat(time);
+    Mojo::IOLoop->timer(5 => sub {
+        if ($self->waitingForStat){
+            $self->log->error('hostChannel not reacting anymore ... lets get a new one.');
+            $self->hostChannel->kill();
+            $self->hostChannel($self->$makeHostChannel());
+        };
+    });
 }
 
 1;
