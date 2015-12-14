@@ -13,14 +13,12 @@ PERLTESTS := $(shell find t -name "*.t")
 
 THIRDPARTY_DIR := $(shell pwd)/thirdparty
 
-EXTRA_DIST = VERSION PERL_MODULES COPYRIGHT LICENSE CHANGES AUTHORS bootstrap $(wildcard t/*.t) $(BIN) $(POD) $(PERLTESTS)
+EXTRA_DIST = VERSION PERL_MODULES COPYRIGHT LICENSE CHANGES AUTHORS bootstrap $(wildcard t/*.t) $(BIN) $(PERLTESTS)
 
 YEAR := $(shell date +%Y)
 DATE := $(shell date +%Y-%m-%d)
 
 datadir = $(prefix)
-nobase_data_DATA = $(PUB)
-
 
 dist-hook: thirdparty/CPAN/touch
 	$(PERL) -i -p -e 's/#VERSION#/$(PACKAGE_VERSION)/g;s/#YEAR#/$(YEAR)/g;s/#DATE#/$(DATE)/g;'  $(distdir)/README $(distdir)/COPYRIGHT $(distdir)/public/index.html
