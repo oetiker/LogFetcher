@@ -83,11 +83,15 @@ has schema => sub {
                     validator => $vf->rx('(?:debug|info|warn|error|fatal)','Pick a logLevel of debug, info, warn, error or fatal'),
                     description => 'mojo log level - debug, info, warn, error or fatal'
                 },
-                interval => {
+                logCheckInterval => {
                     description => 'log check interval in seconds',
                     validator => $integer,
-                }
-            }
+                },
+                statusLogInterval => {
+                    description => 'how often to report the log sync status in seconds',
+                    validator => $integer,
+                },
+            },
         },
         CONSTANTS => {
             description => 'define constants fo be used in globPattern and destinationFile properties.',
@@ -105,6 +109,10 @@ has schema => sub {
             description => 'where does our data come from.',
             array => 1,
             members => {
+                name => {
+                    description => 'identifier for this host for logfiles',
+                    validator => $string,
+                },
                 sshConnect => {
                     description => 'ssh arguments',
                     array => 1,

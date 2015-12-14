@@ -49,9 +49,20 @@ sub run {
     my @c;
     for my $host (@{$self->cfg->{HOSTS}}){
         my $channel = LogFetcher::HostChannel->new(%$host,log=>$self->log);
-        Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{interval} => sub {
-            $self->log->debug('check for new logfiles');
+        Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{logCheckInterval} => sub {
+            # $self->log->debug('check for new logfiles');
             $channel->fetch;
+        });
+        Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{statusLogInterval} => sub {
+            my $s = $channel->stats;
+            $self->log->info($channel->name.": "
+                . "$s->{filesChecked} files checked, "
+                . "$s->{filesTransfered} files transfered, "
+                . "$s->{bytesTransfered} bytes transfered"
+            );
+            for (qw(filesChecked filesTransfered bytesTransfered)) {
+                $s->{$_} = 0;
+            }
         });
         $channel->fetch();
         push @c,$channel;

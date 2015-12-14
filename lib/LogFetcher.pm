@@ -2,6 +2,7 @@ package LogFetcher;
 
 use Mojo::Base 'Mojolicious';
 use LogFetcher::Config;
+our $VERSION = "0.1.0";
 
 =head1 NAME
 
