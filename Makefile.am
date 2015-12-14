@@ -20,6 +20,8 @@ DATE := $(shell date +%Y-%m-%d)
 
 datadir = $(prefix)
 
+dist_bin_SCRIPTS = $(BIN)
+
 dist-hook: thirdparty/CPAN/touch
 	$(PERL) -i -p -e 's/#VERSION#/$(PACKAGE_VERSION)/g;s/#YEAR#/$(YEAR)/g;s/#DATE#/$(DATE)/g;'  $(distdir)/README $(distdir)/COPYRIGHT $(distdir)/public/index.html
 	$(PERL) -i -p -e 's/^\$$VERSION\s*=\s*".+?";/\$$VERSION = "$(PACKAGE_VERSION)";/;'  $(distdir)/lib/$(MJ_CLASS).pm
