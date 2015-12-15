@@ -123,10 +123,12 @@ my $checkTimeStamp = sub {
     $forkCache{"$checkFork"} = $checkFork;
     my $remoteTimeStamp = 99;
     my $read = '';
-
+    my $firstRead;
     $checkFork->on(read => sub {
         my $checkFork = shift;
-        $read .= shift;
+        my $chunk = shift;
+        $read .= $chunk;
+        $firstRead //= substr($chunk,1,256);
         if ($read =~ /<(\d+)>/){
             $remoteTimeStamp = $1;
         }
@@ -140,13 +142,20 @@ my $checkTimeStamp = sub {
     $checkFork->on(close => sub {
         Mojo::IOLoop->remove($timeout);
         my $checkFork = shift;
+        my $exitValue = shift;
+        my $signal = shift;
         delete $forkCache{"$checkFork"};
+        if ($exitValue != 0 or $signal){
+            $abort->("SSH problem Signal $signal, ExitValue $exitValue: ".$firstRead);
+            return;
+        }
         if ($remoteTimeStamp == $timeStamp){
             $self->log->debug($self->name.": timestamp check $src: verification ok");
             $endCheck->();
         }
         else {
             $abort->("timestamp check $src: timestamp is $remoteTimeStamp and not $timeStamp as expected.");
+            return;
         }
     });
     $checkFork->on(error => sub {
@@ -219,9 +228,11 @@ my $transferFile = sub {
         my $timeoutId = Mojo::IOLoop->timer(5 => $timeoutHandler);
         my $startTime;
         my $totalSize = 0;
+        my $firstRead;
         $transferFork->on(read => sub {
             my $transferFork = shift;
             my $chunk = shift;
+            $firstRead //= substr($chunk,1,256);
             if (not $transferStarted){
                 $startTime = gettimeofday();
                 # $self->log->debug($self->name.": fetch $src $dest first byte");
@@ -241,7 +252,7 @@ my $transferFile = sub {
             my $signal = shift;
             Mojo::IOLoop->remove($timeoutId);
             if ($signal or $exitValue or not $transferStarted){
-                $abort->("fetch $src $dest failed: Signal $signal, ExitValue $exitValue");
+                $abort->("fetch $src $dest failed: Signal $signal, ExitValue $exitValue: $firstRead");
             }
             else {
                 $delay->data('perfData',sprintf("%.1f MB @ %.1f MB/s",
@@ -280,9 +291,12 @@ $makeHostChannel = sub {
     my $self = shift;
     my $controlFork = Mojo::IOLoop::ReadWriteFork->new;
     my $read;
-
+    my $firstRead;
     $controlFork->on(read => sub {
-        $read .= $_[1];
+        my $controlFork = shift;
+        my $chunk = shift;
+        $read .= $chunk;
+        $firstRead //= substr($chunk,0,256);
         while ( $read =~ s/^.*?<LOG_FILE><(\d+)><(\d+)><(.+?)><NL>//s ){
             $self->waitingForStat(0);
             my ($id,$time,$file) = ($1,$2,$3);
@@ -296,11 +310,21 @@ $makeHostChannel = sub {
         }
     });
     $controlFork->on(close => sub {
-        $self->log->error($self->name.': Host Channel Closed');
+        my $controlFork = shift;
+        my $exitValue = shift;
+        my $signal = shift;
+        if ($exitValue != 0 and not $signal){
+            $self->log->error($self->name.": SSH problem Signal $signal, ExitValue $exitValue: ".$firstRead);
+        }
+        else {
+            $self->log->error($self->name.": Host Channel Closed: Signal $signal");
+        }
         $self->hostChannel($self->$makeHostChannel());
     });
     $controlFork->on(error => sub {
-        $self->log->error($self->name.': Host Channel Closed');
+        my $controlFork = shift;
+        my $error = shift;
+        $self->log->error($self->name.': Host Channel Closed - '.$error);
         $self->hostChannel($self->$makeHostChannel());
     });
     $self->log->debug($self->name.': ssh '.join(' ',@{$self->sshConnect}).' (hostChannel)');
