@@ -178,7 +178,7 @@ has cfgHash => sub {
         for my $host (@{$cfg->{HOSTS}}){
             for my $logFile (@{$host->{logFiles}}){
                 for my $key (qw(globPattern destinationFile)){
-                    $logFile->{$key} =~ s/\${($CONST_MATCH)}/$const->{$1}/g;
+                    $logFile->{$key} =~ s/\$\{($CONST_MATCH)\}/$const->{$1}/g;
                 }
             }
         }

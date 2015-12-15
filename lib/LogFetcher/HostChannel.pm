@@ -146,7 +146,7 @@ my $checkTimeStamp = sub {
         my $signal = shift;
         delete $forkCache{"$checkFork"};
         if ($exitValue != 0 or $signal){
-            $abort->("SSH problem Signal $signal, ExitValue $exitValue: ".$firstRead);
+            $abort->("timestamp check $src: SSH problem Signal $signal, ExitValue $exitValue: ".($firstRead//'no data'));
             return;
         }
         if ($remoteTimeStamp == $timeStamp){
@@ -252,7 +252,12 @@ my $transferFile = sub {
             my $signal = shift;
             Mojo::IOLoop->remove($timeoutId);
             if ($signal or $exitValue or not $transferStarted){
-                $abort->("fetch $src $dest failed: Signal $signal, ExitValue $exitValue: $firstRead");
+                if ($signal){
+                    $abort->("fetch $src $dest aborted: Signal $signal");
+                }
+                else {
+                    $abort->("fetch $src $dest failed: ExitValue $exitValue: ".($firstRead//'no error info'));
+                }
             }
             else {
                 $delay->data('perfData',sprintf("%.1f MB @ %.1f MB/s",
@@ -285,6 +290,7 @@ my $transferFile = sub {
 
 # open a new fork
 has waitingForStat => sub { 0 };
+has 'hostChannelFirstRead';
 
 my $makeHostChannel;
 $makeHostChannel = sub {
@@ -292,11 +298,15 @@ $makeHostChannel = sub {
     my $controlFork = Mojo::IOLoop::ReadWriteFork->new;
     my $read;
     my $firstRead;
+    $self->hostChannelFirstRead('no data');
     $controlFork->on(read => sub {
         my $controlFork = shift;
         my $chunk = shift;
         $read .= $chunk;
-        $firstRead //= substr($chunk,0,256);
+        if (not $firstRead){
+            $firstRead //= substr($chunk,0,256);
+            $self->hostChannelFirstRead($firstRead);
+        }
         while ( $read =~ s/^.*?<LOG_FILE><(\d+)><(\d+)><(.+?)><NL>//s ){
             $self->waitingForStat(0);
             my ($id,$time,$file) = ($1,$2,$3);
@@ -314,7 +324,7 @@ $makeHostChannel = sub {
         my $exitValue = shift;
         my $signal = shift;
         if ($exitValue != 0 and not $signal){
-            $self->log->error($self->name.": SSH problem Signal $signal, ExitValue $exitValue: ".$firstRead);
+            $self->log->error($self->name.": Host Channel SSH Problem ExitValue $exitValue: ".($firstRead//'no error info'));
         }
         else {
             $self->log->error($self->name.": Host Channel Closed: Signal $signal");
@@ -353,7 +363,7 @@ sub fetch {
     $self->waitingForStat(time);
     Mojo::IOLoop->timer(5 => sub {
         if ($self->waitingForStat){
-            $self->log->error($self->name.': hostChannel not reacting anymore ... lets get a new one.');
+            $self->log->error($self->name.': hostChannel not reacting anymore ... lets get a new one. ('.$self->hostChannelFirstRead.')');
             $self->hostChannel->kill(9);
             $self->hostChannel($self->$makeHostChannel());
         };
