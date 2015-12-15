@@ -174,6 +174,49 @@ my $checkTimeStamp = sub {
 
 };
 
+my $checkSumWorking = sub {
+    state %forkCache;
+    my $self = shift;
+    my $working = shift;
+    my $endTransfer = shift;
+    my $abort = shift;
+    my $checkFork = Mojo::IOLoop::ReadWriteFork->new;
+    $forkCache{"$checkFork"} = $checkFork;
+    my $timeout = Mojo::IOLoop->timer(600 => sub {
+        $checkFork->kill(9);
+        delete $forkCache{"$checkFork"};
+        $abort->("checksumming check $working: TIMEOUT");
+    });
+
+    $checkFork->on(close => sub {
+        Mojo::IOLoop->remove($timeout);
+        my $checkFork = shift;
+        my $exitValue = shift;
+        my $signal = shift;
+        if ($exitValue == 0){
+            $self->log->debug($self->name.": gunzip checksum $working - OK");
+            $endTransfer->();
+        }
+        else {
+            $abort->("checksum check for $working failed Signal: $signal, ExitValue $exitValue");
+            return;
+        }
+    });
+    $checkFork->on(error => sub {
+        my $checkFork = shift;
+        my $error = shift;
+        delete $forkCache{"$checkFork"};
+        $abort->("checksum check for $working: $error");
+    });
+    my @gunzipArgs = (qw(--test --quiet),$working);
+    $self->log->debug($self->name.': gunzip checksum test '.join(' ',@gunzipArgs));
+    $checkFork->start(
+        program => 'gunzip',
+        program_args => \@gunzipArgs,
+    );
+};
+
+
 my $transferFile = sub {
     state %taskCache;
     my $self = shift;
@@ -183,8 +226,9 @@ my $transferFile = sub {
     my $transferStarted = 0;
     my $working = $dest.'.working';
     $self->$makePath($working);
-    my $out;
-    if (open $out, '>>', $working and flock($out,LOCK_EX)){
+    my $outLock;
+    my $outWrite;
+    if (open $outLock, '>>', $working and flock($outLock,LOCK_EX) and open $outWrite, '>', $working){
         my $transferFork = Mojo::IOLoop::ReadWriteFork->new;
         $taskCache{"$transferFork"} = $transferFork;
 
@@ -194,13 +238,14 @@ my $transferFile = sub {
                 rename $working,$dest;
                 $self->log->info($self->name.": fetch $src $dest ".$delay->data('perfData'));
                 $self->stats->{filesTransfered}++;
-                unlink $working;
             }
             else {
                 $self->log->error($self->name.": fetch $src $dest FAILED");
             }
-            flock($out, LOCK_UN);
-            close($out);
+            unlink $working;
+            flock($outLock, LOCK_UN);
+            close($outLock);
+            close($outWrite);
             # the fork is not needed anymore it can be destroyed now
             delete $taskCache{"$transferFork"};
             delete $taskCache{"$delay"};
@@ -244,7 +289,7 @@ my $transferFile = sub {
             my $size = length($chunk);
             $self->stats->{bytesTransfered} += $size;
             $totalSize += $size;
-            syswrite $out,$chunk;
+            syswrite $outWrite,$chunk;
         });
         $transferFork->on(close => sub {
             my $transferFork = shift;
@@ -262,7 +307,7 @@ my $transferFile = sub {
             else {
                 $delay->data('perfData',sprintf("%.1f MB @ %.1f MB/s",
                     $totalSize/1024/1024,$totalSize/1024/1024/(gettimeofday()-$startTime)));
-                $endTransfer->();
+                $self->$checkSumWorking($working,$endTransfer,$abort);
             }
         });
         $transferFork->on(error => sub {
@@ -284,7 +329,7 @@ my $transferFile = sub {
 
     }
     else {
-        $self->log->warn($self->name.": fetch $src $working already in progress. skipping");
+        $self->log->warn($self->name.": fetch $src $working failed: $!.");
     }
 };
 
