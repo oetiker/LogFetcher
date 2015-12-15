@@ -68,7 +68,7 @@ my $CONSTANT_RE = '[_A-Z]+';
 has schema => sub {
     my $self = shift;
     my $vf = $self->validatorFactory;
-    my $string = $vf->rx('^\S+$','expected a string');
+    my $string = $vf->rx('^.*$','expected a string');
     my $integer = $vf->rx('^\d+$','expected an integer');
 
     return {
