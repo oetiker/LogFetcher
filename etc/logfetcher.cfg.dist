@@ -3,7 +3,8 @@
 		"logFile": "/tmp/logfetcher.log",
 		"logLevel": "debug",
 		"logCheckInterval": 10,
-		"statusLogInterval": 60
+		"statusLogInterval": 60,
+		"transferTaskLimit": 100
 	},
 	"CONSTANTS": {
 		"TIME_STAMP": "%Y-%m-%d-%H_%M_%S%z"

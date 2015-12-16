@@ -91,6 +91,16 @@ has schema => sub {
                     description => 'how often to report the log sync status in seconds',
                     validator => $integer,
                 },
+                transferTaskLimit => {
+                    optional => 1,
+                    description => 'how many transfer tasks can be in progress in parallel',
+                    validator => $integer,
+                },
+                timeout => {
+                    description => 'how long to wait for tasks to start',
+                    validator => $integer,
+                    default => 5,
+                },
             },
         },
         CONSTANTS => {

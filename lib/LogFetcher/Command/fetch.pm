@@ -48,7 +48,7 @@ sub run {
     my $app = $self->app;
     my @c;
     for my $host (@{$self->cfg->{HOSTS}}){
-        my $channel = LogFetcher::HostChannel->new(%$host,log=>$self->log);
+        my $channel = LogFetcher::HostChannel->new(%$host,log=>$self->log,gCfg=>$self->cfg->{GENERAL});
         Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{logCheckInterval} => sub {
             # $self->log->debug('check for new logfiles');
             $channel->fetch;

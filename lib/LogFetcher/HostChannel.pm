@@ -75,6 +75,14 @@ a hash of statistics
 
 =cut
 
+=head2 gCfg
+
+GENERAL section form the config file
+
+=cut
+
+has 'gCfg';
+
 has stats => sub {
     return {
         filesTransfered => 0,
@@ -216,6 +224,8 @@ my $checkSumWorking = sub {
     );
 };
 
+# track the active transfers
+my $transferCounter = 0;
 
 my $transferFile = sub {
     state %taskCache;
@@ -295,6 +305,7 @@ my $transferFile = sub {
             my $transferFork = shift;
             my $exitValue = shift;
             my $signal = shift;
+            $transferCounter--;
             Mojo::IOLoop->remove($timeoutId);
             if ($signal or $exitValue or not $transferStarted){
                 if ($signal){
@@ -313,6 +324,7 @@ my $transferFile = sub {
         $transferFork->on(error => sub {
             my $transferFork = shift;
             my $error = shift;
+            $transferCounter--;
             $self->log->error($self->name.": fetch $src $dest: $error");
             delete $taskCache{"$transferFork"};
             Mojo::IOLoop->remove($timeoutId);
@@ -321,6 +333,7 @@ my $transferFile = sub {
         my $cmd = 'gzip -c '.$src;
         my @sshArgs = (@{$self->sshConnect},qw(-T -x -y),$cmd);
         $self->log->debug($self->name.': ssh '.join(' ',@sshArgs));
+        $transferCounter++;
         $transferFork->start(
             program => 'ssh',
             program_args => \@sshArgs,
@@ -343,6 +356,7 @@ $makeHostChannel = sub {
     my $controlFork = Mojo::IOLoop::ReadWriteFork->new;
     my $read;
     my $firstRead;
+    my $taskLimit = $self->gCfg->{transferTaskLimit};
     $self->hostChannelFirstRead('no data');
     $controlFork->on(read => sub {
         my $controlFork = shift;
@@ -360,6 +374,7 @@ $makeHostChannel = sub {
             my $dest = strftime($self->logFiles->[$id]{destinationFile},localtime($time));
             $self->stats->{filesChecked}++;
             if (not -f $dest){
+                next if $taskLimit and $taskLimit < $transferCounter;
                 $self->$transferFile($file,$dest,$time);
             }
         }
@@ -406,7 +421,8 @@ sub fetch {
         );
     }
     $self->waitingForStat(time);
-    Mojo::IOLoop->timer(5 => sub {
+    my $timeout = $self->gCfg->{timeout};
+    Mojo::IOLoop->timer($timeout => sub {
         if ($self->waitingForStat){
             $self->log->error($self->name.': hostChannel not reacting anymore ... lets get a new one. ('.$self->hostChannelFirstRead.')');
             $self->hostChannel->kill(9);
