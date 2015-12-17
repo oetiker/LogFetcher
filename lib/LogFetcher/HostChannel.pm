@@ -328,7 +328,8 @@ sub transferFile {
             Mojo::IOLoop->remove($timeoutId);
             $abort->("fetch $src $dest: $error");
         });
-        my $cmd = 'gzip -c '.$src;
+        # no use double compressing things ...
+        my $cmd = ($src =~ m/\.gz$/ ? 'cat ' : 'gzip -c ').$src;
         my @sshArgs = (@{$self->sshConnect},@defaultSshOpts,$cmd);
         $self->log->debug($self->name.': ssh '.join(' ',@sshArgs));
         $transferCounter++;

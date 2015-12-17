@@ -138,7 +138,10 @@ has schema => sub {
                         },
                         filterRegexp => {
                             optional => 1,
-                            description => 'a regular expression to filter the files found by the globPattern',
+                            description => <<'DOC_END',
+A regular expression to filter the files found by the globPattern. If the RE contains captures, they
+can be accessed as C<${RXMATCH_1}>, C<${RXMATCH_2}> and so on ... (maximal 5 captures).
+DOC_END
                             validator => $string
                         },
                         destinationFile => {
