@@ -3,10 +3,9 @@ use Mojo::Base -base;
 use Mojo::IOLoop::ReadWriteFork;
 use POSIX qw(strftime);
 use File::Path qw(make_path);
-use Fcntl qw(:flock);
 use Time::HiRes qw(gettimeofday);
-use Devel::Cycle;
 use Scalar::Util;
+
 
 =head1 NAME
 
@@ -225,6 +224,8 @@ sub checkSumWorking {
 
 # track the active transfers
 my %transferTrack;
+my %doneFiles;
+my %workFiles;
 
 sub transferFile {
     my $self = shift;
@@ -237,7 +238,8 @@ sub transferFile {
     $self->makePath($working);
     my $outLock;
     my $outWrite;
-    if (open $outLock, '>>', $working and flock($outLock,LOCK_EX) and open $outWrite, '>', $working){
+    if (not $workFiles{$working} and open($outWrite, '>', $working)){
+        $workFiles{$working} = 1 ;
         my $transferFork = Mojo::IOLoop::ReadWriteFork->new;
         $rc{$transferFork} = $transferFork;
         my $forkKey = "$transferFork";
@@ -246,15 +248,14 @@ sub transferFile {
             if (my $error = $delay->data('error')){
                 $self->log->error($self->name.": fetch $src $dest - $error");
                 unlink $working;
+                delete $workFiles{$working};
             }
             else {
                 rename $working,$dest;
+                $doneFiles{$dest} = 1;
                 $self->log->info($self->name.": fetch $src $dest ".$delay->data('perfData'));
                 $self->stats->{filesTransfered}++;
             }
-            flock($outLock, LOCK_UN);
-            close($outLock);
-            close($outWrite);
             delete $rc{$forkKey};
         });
 
@@ -303,10 +304,10 @@ sub transferFile {
             if ($signal or $exitValue or not $transferStarted){
                 if (not $delay->data('error')){
                     if ($signal){
-                        $delay->data('error',"fetch $src $dest aborted: Signal $signal");
+                        $delay->data('error',"aborted: Signal $signal");
                     }
                     else {
-                        $delay->data('error',"fetch $src $dest failed: ExitValue $exitValue: ".($firstRead//'no error info'));
+                        $delay->data('error',"failed: ExitValue $exitValue: ".($firstRead//'no error info'));
                     }
                 }
                 $endTransfer->();
@@ -381,7 +382,7 @@ sub makeHostChannel {
             $dest =~ s/\$\{(RXMATCH_[1-5])\}/$match{$1}/g;
             $self->stats->{filesChecked}++;
             $self->lastLogInfoLine(time);
-            if (not -f $dest){
+            if (not $doneFiles{$dest} and not -f $dest){
                 next if $taskLimit and $taskLimit < scalar keys %transferTrack;
                 $self->transferFile($file,$dest,$time);
             }
