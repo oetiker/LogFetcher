@@ -2,7 +2,7 @@ package LogFetcher::Command::fetch;
 use Mojo::Base 'Mojolicious::Command';
 use Getopt::Long 2.25 qw(:config posix_default no_ignore_case);
 use LogFetcher::HostChannel;
-
+use Devel::Cycle;
 =head1 NAME
 
 LogFetcher::Command::sync - Ptp2Fibu3 syncer
@@ -52,6 +52,9 @@ sub run {
         Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{logCheckInterval} => sub {
             # $self->log->debug('check for new logfiles');
             $channel->fetch;
+            #print "#################\n";
+            #find_cycle($channel);
+            #print "#################\n";
         });
         Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{statusLogInterval} => sub {
             my $s = $channel->stats;

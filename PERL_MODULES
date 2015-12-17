@@ -2,3 +2,5 @@ Mojolicious@6.36
 Mojo::IOLoop::ReadWriteFork@0.16
 Data::Processor@0.4.2
 EV@4.21
+Devel::Cycle
+PadWalker
