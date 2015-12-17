@@ -202,16 +202,16 @@ sub checkSumWorking {
         my $signal = shift;
         if ($exitValue == 0){
             $self->log->debug($self->name.": gunzip checksum $working - OK");
-            $endTransfer->();
         }
         else {
             $abort->("checksum check for $working failed Signal: $signal, ExitValue $exitValue");
-            return;
         }
+        $endTransfer->();
     });
     $checkFork->on(error => sub {
         my $checkFork = shift;
         my $error = shift;
+        Mojo::IOLoop->remove($timeout);
         $checkFork->kill(9);
         $abort->("checksum check for $working: $error");
     });
@@ -224,7 +224,7 @@ sub checkSumWorking {
 };
 
 # track the active transfers
-my $transferCounter = 0;
+my %transferTrack;
 
 sub transferFile {
     my $self = shift;
@@ -243,16 +243,15 @@ sub transferFile {
         my $forkKey = "$transferFork";
         my $delay = Mojo::IOLoop->delay(sub {
             my $delay = shift;
-            if (not $delay->data('error')){
+            if (my $error = $delay->data('error')){
+                $self->log->error($self->name.": fetch $src $dest - $error");
+                unlink $working;
+            }
+            else {
                 rename $working,$dest;
                 $self->log->info($self->name.": fetch $src $dest ".$delay->data('perfData'));
                 $self->stats->{filesTransfered}++;
             }
-            else {
-                $self->log->error($self->name.": fetch $src $dest FAILED");
-                unlink $working;
-            }
-
             flock($outLock, LOCK_UN);
             close($outLock);
             close($outWrite);
@@ -265,17 +264,13 @@ sub transferFile {
         my $abort = sub {
             my $error = shift;
             $delay->data('error',$error);
-            flock($outLock, LOCK_UN);
-            close($outLock);
-            close($outWrite);
-            unlink $working;
-            $self->log->error($self->name.": $error");
+            $endTransfer->();
+            $endCheck->();
             $wtf->kill(9) if $wtf;
-            delete $rc{$forkKey};
         };
 
         my $timeoutHandler = sub {
-            $abort->("fetch $src $dest: TIMEOUT");
+            $abort->("TIMEOUT");
         };
 
         my $timeoutId = Mojo::IOLoop->timer($self->gCfg->{timeout} => $timeoutHandler);
@@ -303,41 +298,45 @@ sub transferFile {
             my $transferFork = shift;
             my $exitValue = shift;
             my $signal = shift;
-            $transferCounter--;
+            delete $transferTrack{"$transferFork"};
             Mojo::IOLoop->remove($timeoutId);
             if ($signal or $exitValue or not $transferStarted){
-                if ($signal){
-                    $abort->("fetch $src $dest aborted: Signal $signal");
+                if (not $delay->data('error')){
+                    if ($signal){
+                        $delay->data('error',"fetch $src $dest aborted: Signal $signal");
+                    }
+                    else {
+                        $delay->data('error',"fetch $src $dest failed: ExitValue $exitValue: ".($firstRead//'no error info'));
+                    }
                 }
-                else {
-                    $abort->("fetch $src $dest failed: ExitValue $exitValue: ".($firstRead//'no error info'));
-                }
+                $endTransfer->();
+                $endCheck->();
             }
             else {
                 $delay->data('perfData',sprintf("%.1f MB @ %.1f MB/s",
                     $totalSize/1024/1024,$totalSize/1024/1024/(gettimeofday()-$startTime)));
                 $self->checkSumWorking($working,$endTransfer,$abort);
-                delete $rc{$forkKey};
             }
         });
         $transferFork->on(error => sub {
             my $transferFork = shift;
             my $error = shift;
-            $transferCounter--;
-            $self->log->error($self->name.": fetch $src $dest: $error");
+            delete $transferTrack{"$transferFork"};
+            $delay->data('error',"fetch $src $dest failed: $error");
             Mojo::IOLoop->remove($timeoutId);
-            $abort->("fetch $src $dest: $error");
+            $endTransfer->();
+            $endCheck->();
         });
         # no use double compressing things ...
         my $cmd = ($src =~ m/\.gz$/ ? 'cat ' : 'gzip -c ').$src;
         my @sshArgs = (@{$self->sshConnect},@defaultSshOpts,$cmd);
         $self->log->debug($self->name.': ssh '.join(' ',@sshArgs));
-        $transferCounter++;
         $transferFork->start(
             program => 'ssh',
             program_args => \@sshArgs,
             conduit => 'pipe',
         );
+        $transferTrack{"$transferFork"} = 1;
     }
     else {
         $self->log->warn($self->name.": fetch $src $working failed: $!.");
@@ -383,7 +382,7 @@ sub makeHostChannel {
             $self->stats->{filesChecked}++;
             $self->lastLogInfoLine(time);
             if (not -f $dest){
-                next if $taskLimit and $taskLimit < $transferCounter;
+                next if $taskLimit and $taskLimit < scalar keys %transferTrack;
                 $self->transferFile($file,$dest,$time);
             }
         }
