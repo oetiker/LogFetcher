@@ -129,7 +129,11 @@ sub checkTimeStamp {
     my $timeStamp = shift;
     my $endCheck = shift;
     my $abort = shift;
+    # if the fork handle goes out of scope, the fork gets destoryed ...
+    # by saving it into this hash we keep it alive until it is done with its work
+    state %rc;
     my $checkFork = Mojo::IOLoop::ReadWriteFork->new;
+    $rc{$checkFork} = $checkFork;
     my $remoteTimeStamp = 99;
     my $read = '';
     my $firstRead;
@@ -153,6 +157,7 @@ sub checkTimeStamp {
         my $checkFork = shift;
         my $exitValue = shift;
         my $signal = shift;
+        delete $rc{$checkFork};
         if ($exitValue != 0 or $signal){
             $abort->("timestamp check $src: SSH problem Signal $signal, ExitValue $exitValue: ".($firstRead//'no data'));
             return;
@@ -170,6 +175,8 @@ sub checkTimeStamp {
         Mojo::IOLoop->remove($timeout);
         my $checkFork = shift;
         my $error = shift;
+        delete $rc{$checkFork};
+        $checkFork->kill(9);
         $abort->("stamp check $src: $error");
     });
     my $cmd = "stat --format='<%Y>' $src";
@@ -187,8 +194,12 @@ sub checkSumWorking {
     my $working = shift;
     my $endTransfer = shift;
     my $abort = shift;
+    # if the fork handle goes out of scope, the fork gets destoryed ...
+    # by saving it into this hash we keep it alive until it is done with its work
+    state %rc;
     my $checkFork = Mojo::IOLoop::ReadWriteFork->new;
-
+    # save a copy
+    $rc{$checkFork} = $checkFork;
     my $timeout = Mojo::IOLoop->timer(600 => sub {
         $checkFork->kill(9);
         $abort->("checksumming check $working: TIMEOUT");
@@ -206,12 +217,14 @@ sub checkSumWorking {
             $abort->("checksum check for $working failed Signal: $signal, ExitValue $exitValue");
         }
         $endTransfer->();
+        delete $rc{$checkFork};
     });
     $checkFork->on(error => sub {
         my $checkFork = shift;
         my $error = shift;
         Mojo::IOLoop->remove($timeout);
         $checkFork->kill(9);
+        delete $rc{$checkFork};
         $abort->("checksum check for $working: $error");
     });
     my @gunzipArgs = (qw(--test --quiet),$working);
@@ -232,6 +245,8 @@ sub transferFile {
     my $src = shift;
     my $dest = shift;
     my $timeStamp = shift;
+    # if the transferFork handle goes out of scope, the fork gets destoryed ...
+    # by saving it into this hash we keep it alive until it is done with its work
     state %rc;
     my $transferStarted = 0;
     my $working = $dest.'.working';
@@ -241,8 +256,11 @@ sub transferFile {
     if (not $workFiles{$working} and open($outWrite, '>', $working)){
         $workFiles{$working} = 1 ;
         my $transferFork = Mojo::IOLoop::ReadWriteFork->new;
-        $rc{$transferFork} = $transferFork;
+        # stringify outside the callback to not
+        # create a closure
         my $forkKey = "$transferFork";
+        # the keep alive copy
+        $rc{$forkKey} = $transferFork;
         my $delay = Mojo::IOLoop->delay(sub {
             my $delay = shift;
             if (my $error = $delay->data('error')){
@@ -256,6 +274,7 @@ sub transferFile {
                 $self->log->info($self->name.": fetch $src $dest ".$delay->data('perfData'));
                 $self->stats->{filesTransfered}++;
             }
+            # now it can go ... bye bye
             delete $rc{$forkKey};
         });
 
@@ -351,7 +370,7 @@ has 'hostChannelFirstRead';
 sub makeHostChannel {
     my $self = shift;
     my $controlFork = Mojo::IOLoop::ReadWriteFork->new;
-    my $read;
+    my $read = '';
     my $firstRead;
     my $taskLimit = $self->gCfg->{transferTaskLimit};
     $self->hostChannelFirstRead('no data');
@@ -359,10 +378,7 @@ sub makeHostChannel {
         my $controlFork = shift;
         my $chunk = shift;
         $read .= $chunk;
-        if (not $firstRead){
-            $firstRead //= substr($chunk,0,256);
-            $self->hostChannelFirstRead($firstRead);
-        }
+
         while ( $read =~ s/^(.*?)<LOG_FILE><(\d+)><(\d+)><(.+?)><NL>//s ){
             if (not $firstRead){
                 $firstRead = $1;
@@ -405,6 +421,7 @@ sub makeHostChannel {
         my $controlFork = shift;
         my $error = shift;
         $self->log->error($self->name.': Host Channel Closed - '.$error);
+        # add timer
         $self->hostChannel($self->makeHostChannel);
     });
     $self->log->debug($self->name.': ssh '.join(' ',@{$self->sshConnect}).' (hostChannel)');

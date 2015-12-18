@@ -43,18 +43,19 @@ sub run {
     GetOptions(\%opt, 'daemon|d', 'noaction|no-action|n', 'verbose|v');
     if ($opt{verbose}){
         $self->log->level('debug');
-        $self->app->log->handle(\*STDOUT);
+        $self->log->handle(\*STDOUT);
     }
     my $app = $self->app;
-    my @c;
+
+
+    # setup our tasks
     for my $host (@{$self->cfg->{HOSTS}}){
+        # since the $channel is used in the recurring callbacks
+        # it does not get DESTORYED prematurely (or every actyally)
+        # but here this is fine
         my $channel = LogFetcher::HostChannel->new(%$host,log=>$self->log,gCfg=>$self->cfg->{GENERAL});
         Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{logCheckInterval} => sub {
-            # $self->log->debug('check for new logfiles');
             $channel->fetch;
-            #print "#################\n";
-            #find_cycle($channel);
-            #print "#################\n";
         });
         Mojo::IOLoop->recurring( $self->cfg->{GENERAL}{statusLogInterval} => sub {
             my $s = $channel->stats;
@@ -68,8 +69,8 @@ sub run {
             }
         });
         $channel->fetch();
-        push @c,$channel;
     }
+
     Mojo::IOLoop->start;
     return $self;
 }

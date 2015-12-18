@@ -176,9 +176,6 @@ access the config hash
 has cfgHash => sub {
     my $self = shift;
     my $cfg = $self->loadJSONCfg($self->file);
-    # we need to set this real early to catch all the info in the logfile.
-    $self->app->log->path($cfg->{GENERAL}{logFile});
-    $self->app->log->level($cfg->{GENERAL}{logLevel});
     my $validator = $self->validator;
     my $hasErrors;
     my $err = $validator->validate($cfg);
@@ -186,6 +183,10 @@ has cfgHash => sub {
         warn "$_\n";
         $hasErrors = 1;
     }
+    die "Can't continue with config errors\n" if $hasErrors;
+    # we need to set this real early to catch all the info in the logfile.
+    $self->app->log->path($cfg->{GENERAL}{logFile});
+    $self->app->log->level($cfg->{GENERAL}{logLevel});
     if (my $const = $cfg->{CONSTANTS}){
         my $CONST_MATCH = join('|',keys %$const);
         for my $host (@{$cfg->{HOSTS}}){
@@ -196,7 +197,6 @@ has cfgHash => sub {
             }
         }
     }
-    die "Can't continue with config errors\n" if $hasErrors;
     return $cfg;
 };
 
