@@ -202,7 +202,7 @@ sub checkSumWorking {
     $rc{$checkFork} = $checkFork;
     my $timeout = Mojo::IOLoop->timer(600 => sub {
         $checkFork->kill(9);
-        $abort->("checksumming check $working: TIMEOUT");
+        $abort->("checksuming check $working: TIMEOUT");
     });
 
     $checkFork->on(close => sub {
@@ -284,10 +284,10 @@ sub transferFile {
         my $abort = sub {
             my $error = shift;
             $delay->data('error',$error);
+            $wtf->kill(9) if $wtf;
             $endTransfer->();
             $endCheck->();
-            $wtf->kill(9) if $wtf;
-        };
+         };
 
         my $timeoutHandler = sub {
             $abort->("TIMEOUT");
