@@ -158,6 +158,10 @@ sub checkTimeStamp {
         my $exitValue = shift;
         my $signal = shift;
         delete $rc{$checkFork};
+#        if (rand() > 0.5){
+#            $abort->("timestamp check $src: random abort");
+#            return;
+#        }
         if ($exitValue != 0 or $signal){
             $abort->("timestamp check $src: SSH problem Signal $signal, ExitValue $exitValue: ".($firstRead//'no data'));
             return;
@@ -364,8 +368,9 @@ sub transferFile {
 };
 
 # open a new fork
-has lastLogInfoLine => sub { time };
+has 'lastLogInfoLine';
 has 'hostChannelFirstRead';
+has 'hostChannel';
 
 sub makeHostChannel {
     my $self = shift;
@@ -374,6 +379,7 @@ sub makeHostChannel {
     my $firstRead;
     my $taskLimit = $self->gCfg->{transferTaskLimit};
     $self->hostChannelFirstRead('no data');
+    $self->lastLogInfoLine(time);
     $controlFork->on(read => sub {
         my $controlFork = shift;
         my $chunk = shift;
@@ -415,15 +421,16 @@ sub makeHostChannel {
         else {
             $self->log->error($self->name.": Host Channel Closed: Signal $signal");
         }
-        $self->hostChannel($self->makeHostChannel);
+        $self->hostChannel(undef);
     });
+
     $controlFork->on(error => sub {
         my $controlFork = shift;
         my $error = shift;
         $self->log->error($self->name.': Host Channel Closed - '.$error);
-        # add timer
-        $self->hostChannel($self->makeHostChannel);
+        $self->hostChannel(undef);
     });
+
     $self->log->debug($self->name.': ssh '.join(' ',@{$self->sshConnect}).' (hostChannel)');
     $controlFork->start(
         program => 'ssh',
@@ -433,21 +440,27 @@ sub makeHostChannel {
     return $controlFork;
 };
 
-has hostChannel => sub {
-    shift->makeHostChannel;
-};
-
 sub fetch {
     my $self = shift;
+    if (not $self->hostChannel){
+        my $hc = $self->makeHostChannel;
+        if ($hc){
+            $self->hostChannel($hc);
+        }
+        else {
+            return;
+        }
+    }
     if (time - $self->lastLogInfoLine > $self->gCfg->{timeout}+$self->gCfg->{logCheckInterval}){
         $self->log->error($self->name.': hostChannel not reacting anymore ... lets get a new one. ('.$self->hostChannelFirstRead.')');
         $self->hostChannel->kill(9);
+        return;
     };
     my $logFiles = $self->logFiles;
     for (my $id = 0;$id < scalar @$logFiles;$id++){
         $self->hostChannel->write("stat --format='<LOG_FILE><$id><%Y><%n><NL>' "
             . $logFiles->[$id]{globPattern}
-            ."\n"
+            . "\n"
         );
     }
 }

@@ -4,7 +4,7 @@
 		"logLevel": "debug",
 		"logCheckInterval": 10,
 		"statusLogInterval": 60,
-		"transferTaskLimit": 200,
+		"transferTaskLimit": 20,
 		"timeout": 5
 	},
 	"CONSTANTS": {
