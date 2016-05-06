@@ -43,6 +43,7 @@ has config => sub {
 sub startup {
     my $app = shift;
     @{$app->commands->namespaces} = (__PACKAGE__.'::Command');
+    $app->commands->message("Usage:\n\n".$app->commands->extract_usage."\nCommands:\n\n");
 }
 
 1;

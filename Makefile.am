@@ -1,13 +1,10 @@
-#  Copyright (C) 2015 Tobias Oetiker
+#  Copyright (C) 2016 Tobias Oetiker
 
 AUTOMAKE_OPTIONS =  foreign
 
-MJ_CLASS = LogFetcher
-MJ_SCRIPT = logfetcher
-
 SUBDIRS = thirdparty lib etc
 
-BIN = bin/$(MJ_SCRIPT).pl
+BIN = bin/$(SCRIPT_NAME)
 
 PERLTESTS := $(shell find t -name "*.t")
 
@@ -20,11 +17,13 @@ DATE := $(shell date +%Y-%m-%d)
 
 datadir = $(prefix)
 
+README COPYRIGHT : VERSION
+	$(PERL) -i -p -e 's/(#VERSION#|\d+\.\d+.\d+\S+)/$(PACKAGE_VERSION)/g;s/(#YEAR#|20[1-4]\d)/$(YEAR)/g;s/(#DATE#|20[1-9]\d-[01]\d-[0-3]\d)/$(DATE)/g;' $@
+
 dist_bin_SCRIPTS = $(BIN)
 
 dist-hook: thirdparty/CPAN/touch
-	$(PERL) -i -p -e 's/#VERSION#/$(PACKAGE_VERSION)/g;s/#YEAR#/$(YEAR)/g;s/#DATE#/$(DATE)/g;'  $(distdir)/README $(distdir)/COPYRIGHT $(distdir)/public/index.html
-	$(PERL) -i -p -e 's/^our\s+\$$VERSION\s*=\s*".+?";/our \$$VERSION = "$(PACKAGE_VERSION)";/;'  $(distdir)/lib/$(MJ_CLASS).pm
+	$(PERL) -i -p -e 's/^our\s+\$$VERSION\s*=\s*".+?";/our \$$VERSION = "$(PACKAGE_VERSION)";/;'  $(distdir)/lib/$(CLASS_NAME).pm
 
 install-exec-hook:
 	[ "$(PERL5LIB)" == "" ] || cd "$(DESTDIR)$(exec_prefix)" && $(PERL) -i -p -e 's{.*# PERL5LIB}{use lib qw($(PERL5LIB)); # PERL5LIB}' $(BIN) || true
@@ -34,3 +33,4 @@ install-exec-hook:
 
 test:
 	$(PERL) "-MExtUtils::Command::MM" "-e" "test_harness(0, 'lib','thirdparty/lib/perl5')" t/*.t
+

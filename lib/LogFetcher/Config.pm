@@ -123,6 +123,12 @@ has schema => sub {
                     description => 'identifier for this host for logfiles',
                     validator => $string,
                 },
+                statType => {
+                    optional => 1,
+                    description => 'pick gnu or bsd for the type of stat comand on the remote system',
+                    validator => $vf->rx('^(gnu|bsd)$','expected gnu or bsd'),
+                    default => 'gnu',
+                },
                 sshConnect => {
                     description => 'ssh arguments',
                     array => 1,

@@ -1,5 +1,6 @@
-Mojolicious@6.36
-Mojo::IOLoop::ReadWriteFork@0.16
+Mojolicious@6.61
+Mojo::IOLoop::ReadWriteFork@0.21
+Scalar::Util@1.45
 Data::Processor@0.4.2
 EV@4.21
 Devel::Cycle

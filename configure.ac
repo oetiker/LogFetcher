@@ -3,6 +3,10 @@
 AC_INIT([logFetcher],m4_esyscmd([tr -d '\n' < VERSION]),[tobi@oetiker.ch])
 AC_PREREQ([2.59])
 AC_CONFIG_AUX_DIR(conftools)
+SCRIPT_NAME=logfetcher.pl
+AC_SUBST(SCRIPT_NAME)
+CLASS_NAME=LogFetcher
+AC_SUBST(CLASS_NAME)
 
 
 # need this to allow long path names
@@ -57,11 +61,6 @@ else
     AC_MSG_ERROR([GNU make not found. Try setting the GMAKE environment variable.])
 fi
 
-AC_ARG_ENABLE(pkgonly,
-        AC_HELP_STRING([--enable-pkgonly],
-                        [Skip all checking]))
-AC_SUBST(enable_pkgonly)
-
 actual_prefix=$prefix
 if test x$actual_prefix = xNONE; then
     actual_prefix=$ac_default_prefix
@@ -69,26 +68,6 @@ fi
 
 AC_ARG_VAR(PERL5LIB,   [Colon separated list of perl library directories])
 AC_SUBST(PERL5LIB)
-
-# Check the necessary Perl modules
-
-mod_ok=1
-MISSING_PERL_MODULES=""
-if test "$enable_pkgonly" != yes; then
-   for module in m4_esyscmd([tr '\n' ' ' < PERL_MODULES]); do
-     AC_MSG_CHECKING([for perl module '$module'])
-     if ${PERL} -I`dirname $0`/thirdparty/lib/perl5 -e 'my($m,$v) = split /\@/, q{'$module'};eval "use $m"; exit 1 if $@; exit 1 if not $v or eval(q{$}.$m.q{::VERSION}) ne $v' ; then
-         AC_MSG_RESULT([Ok])
-     else
-         MISSING_PERL_MODULES="${MISSING_PERL_MODULES} $module"
-         AC_MSG_RESULT([Auto Install])
-         mod_ok=0
-     fi
-   done
-fi
-
-AC_SUBST(MISSING_PERL_MODULES)
-
 
 AC_CONFIG_FILES([
     Makefile
@@ -101,19 +80,6 @@ AC_SUBST(VERSION)
 
 AC_OUTPUT
 
-if test x$mod_ok = x0; then
-    cat <<NOTES
-
-** SOME PERL MODULES ARE MISSING ******************************
-
-If you know where perl can find the missing modules, set
-the PERL5LIB environment variable accordingly. Otherwise
-just proceed and the missing modules will be installed
-automatically.
-NOTES
-
-fi
-
 cat <<NOTES
 
 ** CONFIGURE DONE **********************************************
@@ -122,7 +88,6 @@ Settings:
 
   PERL5LIB = ${PERL5LIB:-"not set"}
   PERL = $PERL
-  MODULES = ${MISSING_PERL_MODULES:-"All modules present"}
 
 The Makefiles use GNU make functionality.
 Continue installation with

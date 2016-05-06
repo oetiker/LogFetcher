@@ -36,6 +36,16 @@ has sshConnect => sub {
     return [];
 };
 
+=head2 statType
+
+is the remote system providing gnu or bsd stat
+
+=cut
+
+has statType => sub {
+    return 'gnu';
+};
+
 =head2 logFiles
 
 a list of logfile hashes as defined in the config format. These are the files we are going to watch.
@@ -108,7 +118,7 @@ sub makePath {
     my $working = shift;
     if ($working =~ m{^(/.+/)} and not -d $1){
         make_path($1,{error => \my $err});
-        if (@$err) {
+        if (scalar @$err) {
             for my $diag (@$err) {
                 my ($file, $message) = %$diag;
                 if ($file eq '') {
@@ -183,7 +193,7 @@ sub checkTimeStamp {
         $checkFork->kill(9);
         $abort->("stamp check $src: $error");
     });
-    my $cmd = "stat --format='<%Y>' $src";
+    my $cmd = $self->statType eq 'gnu' ? "stat --format='<%Y>' $src" : "stat -f '<%Dm>' $src" ;
     my @sshArgs = (@{$self->sshConnect},@defaultSshOpts,$cmd);
     $self->log->debug($self->name.': ssh '.join(' ',@sshArgs));
     $checkFork->start(
@@ -386,7 +396,7 @@ sub makeHostChannel {
         $read .= $chunk;
 
         while ( $read =~ s/^(.*?)<LOG_FILE><(\d+)><(\d+)><(.+?)><NL>//s ){
-            if (not $firstRead){
+            if (not $firstRead and $1){
                 $firstRead = $1;
                 $self->hostChannelFirstRead($firstRead);
             }
@@ -408,6 +418,15 @@ sub makeHostChannel {
                 next if $taskLimit and $taskLimit < scalar keys %transferTrack;
                 $self->transferFile($file,$dest,$time);
             }
+        }
+        if (not $firstRead and $read and length($read) > 10){
+            $firstRead = substr($read,0,320);
+            chomp($firstRead);
+            $firstRead =~ s/[\n\r]+/\\n/g;
+            $self->hostChannelFirstRead($firstRead);
+        }
+        if ( $read =~ s/<ERROR>//){
+            $self->log->error($self->name.": Host Channel Problem: ".($firstRead//'no error info'));
         }
     });
 
@@ -458,9 +477,12 @@ sub fetch {
     };
     my $logFiles = $self->logFiles;
     for (my $id = 0;$id < scalar @$logFiles;$id++){
-        $self->hostChannel->write("stat --format='<LOG_FILE><$id><%Y><%n><NL>' "
+        $self->hostChannel->write(
+            ($self->statType eq 'gnu'
+              ? "stat --format='<LOG_FILE><$id><%Y><%n><NL>' "
+              : "stat -f '<LOG_FILE><$id><%Dm><%SN><NL>' ")
             . $logFiles->[$id]{globPattern}
-            . "\n"
+            . " || echo '<ERROR>'\n"
         );
     }
 }

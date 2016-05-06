@@ -33,6 +33,7 @@
 			"sshConnect": [
 				"james-adm"
 			],
+			"statType": "bsd",
 			"logFiles": [
 			{
 				"globPattern": "/var/log/apache/*access.*",
