@@ -39,7 +39,7 @@ has cfg => sub { shift->app->config->cfgHash };
 
 sub run {
     my $self   = shift;
-    local @ARGV = @_ if @_;
+    local @ARGV = @_ if scalar @_;
     GetOptions(\%opt, 'daemon|d', 'noaction|no-action|n', 'verbose|v');
     if ($opt{verbose}){
         $self->log->level('debug');

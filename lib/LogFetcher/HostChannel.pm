@@ -332,7 +332,7 @@ sub transferFile {
             my $transferFork = shift;
             my $exitValue = shift;
             my $signal = shift;
-            delete $transferTrack{"$transferFork"};
+            delete $transferTrack{$forkKey};
             Mojo::IOLoop->remove($timeoutId);
             if ($signal or $exitValue or not $transferStarted){
                 if (not $delay->data('error')){
@@ -355,7 +355,7 @@ sub transferFile {
         $transferFork->on(error => sub {
             my $transferFork = shift;
             my $error = shift;
-            delete $transferTrack{"$transferFork"};
+            delete $transferTrack{$forkKey};
             $delay->data('error',"fetch $src $dest failed: $error");
             Mojo::IOLoop->remove($timeoutId);
             $endTransfer->();
@@ -370,7 +370,7 @@ sub transferFile {
             program_args => \@sshArgs,
             conduit => 'pipe',
         );
-        $transferTrack{"$transferFork"} = 1;
+        $transferTrack{$forkKey} = 1;
     }
     else {
         $self->log->warn($self->name.": fetch $src $working failed: $!.");
@@ -415,7 +415,10 @@ sub makeHostChannel {
             $self->stats->{filesChecked}++;
             $self->lastLogInfoLine(time);
             if (not $doneFiles{$dest} and not -f $dest){
-                next if $taskLimit and $taskLimit < scalar keys %transferTrack;
+                if ($taskLimit and $taskLimit < scalar keys %transferTrack){
+                    $self->log->info($self->name.": Not transfering $dest yet since ".(scalar keys %transferTrack)." transfers are in progress");
+                    next;
+                };
                 $self->transferFile($file,$dest,$time);
             }
         }
@@ -426,7 +429,9 @@ sub makeHostChannel {
             $self->hostChannelFirstRead($firstRead);
         }
         if ( $read =~ s/<ERROR>//){
-            $self->log->error($self->name.": Host Channel Problem: ".($firstRead//'no error info'));
+            my $error = $read;
+            $error =~ s/[\n\r]+/\\n/g;
+            $self->log->error($self->name.": Host Channel Problem: ".($error//'no error info'));
         }
     });
 
