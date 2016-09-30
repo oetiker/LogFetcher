@@ -405,19 +405,26 @@ sub makeHostChannel {
                 $self->hostChannelFirstRead($firstRead);
             }
             my ($id,$time,$file) = ($2,$3,$4);
-            if (my $filter = $self->logFiles->[$id]{filterRegexp}){
-                next if $file !~ $filter;
-            }
             if (my $minAge = $self->logFiles->[$id]{minAge}){
                 next if time - $time <= $minAge;
             }
             my %match = (
-                RXMATCH_1 => $1,
-                RXMATCH_2 => $2,
-                RXMATCH_3 => $3,
-                RXMATCH_4 => $4,
-                RXMATCH_5 => $5,
+                RXMATCH_1 => '',
+                RXMATCH_2 => '',
+                RXMATCH_3 => '',
+                RXMATCH_4 => '',
+                RXMATCH_5 => '',
             );
+            if (my $filter = $self->logFiles->[$id]{filterRegexp}){
+                next if $file !~ $filter;
+                %match = (
+                    RXMATCH_1 => $1 // '',
+                    RXMATCH_2 => $2 // '',
+                    RXMATCH_3 => $3 // '',
+                    RXMATCH_4 => $4 // '',
+                    RXMATCH_5 => $5 // '',
+                );
+            }
             my $dest = strftime($self->logFiles->[$id]{destinationFile},localtime($time));
             $dest =~ s/\$\{(RXMATCH_[1-5])\}/$match{$1}/g;
             $self->stats->{filesChecked}++;

@@ -1,3 +1,5 @@
+0.10.1 2016-09-30  made file filter more robust
+
 0.10.0 2016-09-30  added minAge option
 
 0.8.2 2016-01-22  improve handling of host channel loss
