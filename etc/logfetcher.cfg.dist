@@ -43,6 +43,12 @@
 				"globPattern": "/var/log/apache/*error.*",
 				"filterRegexp": "([^/]+-error.log)\\.\\d+$",
 				"destinationFile": "/scratch/archive/james/%Y/%m/${RXMATCH_1}-${TIME_STAMP}.gz"
+			},
+			{
+				"globPattern": "/var/log/tomcat/cataline.*",
+				"destinationFile": "/scratch/archive/james/%Y/%m/cataline-${TIME_STAMP}.gz",
+				"minAge": "86400"
+
 			}
 			]
 		}

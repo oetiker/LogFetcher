@@ -150,6 +150,16 @@ can be accessed as C<${RXMATCH_1}>, C<${RXMATCH_2}> and so on ... (maximal 5 cap
 DOC_END
                             validator => $string
                         },
+                        minAge => {
+                            optional => 1,
+                            description => <<'DOC_END',
+The minimum age of the file in seconds to be considered for fetching.  Use
+this if you want to fetch files that get a new name daily.  Set the age to
+one day, as this will cause the file to be fetched once it has not been
+written to for at least a day.
+DOC_END
+                            validator => $integer
+                        },
                         destinationFile => {
                             description => 'where to store the file you can use ${CONSTANTS} and strftime formatting',
                             validator => $string

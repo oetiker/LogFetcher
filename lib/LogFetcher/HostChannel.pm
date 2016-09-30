@@ -405,8 +405,12 @@ sub makeHostChannel {
                 $self->hostChannelFirstRead($firstRead);
             }
             my ($id,$time,$file) = ($2,$3,$4);
-            my $filter = $self->logFiles->[$id]{filterRegexp};
-            next if $filter and $file !~ $filter;
+            if (my $filter = $self->logFiles->[$id]{filterRegexp}){
+                next if $file !~ $filter;
+            }
+            if (my $minAge = $self->logFiles->[$id]{minAge}){
+                next if time - $time <= $minAge;
+            }
             my %match = (
                 RXMATCH_1 => $1,
                 RXMATCH_2 => $2,
