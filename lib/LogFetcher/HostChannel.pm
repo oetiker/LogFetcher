@@ -408,7 +408,10 @@ sub makeHostChannel {
             }
             my ($id,$time,$file) = ($2,$3,$4);
             if (my $minAge = $self->logFiles->[$id]{minAge}){
-                next if time - $time <= $minAge;
+                if (time - $time <= $minAge){
+                    $self->log->debug($self->name.": skipping $file as is not $minAge seconds old");
+                    next;
+                }
             }
             my %match = (
                 RXMATCH_1 => '',
@@ -418,7 +421,10 @@ sub makeHostChannel {
                 RXMATCH_5 => '',
             );
             if (my $filter = $self->logFiles->[$id]{filterRegexp}){
-                next if $file !~ $filter;
+                if ($file !~ $filter){
+                    $self->log->debug($self->name.": skipping $file as it does not match filterRexexp /$filter/");
+                    next;
+                }
                 %match = (
                     RXMATCH_1 => $1 // '',
                     RXMATCH_2 => $2 // '',

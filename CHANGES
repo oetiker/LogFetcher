@@ -1,3 +1,7 @@
+0.10.3 2018-01-24  more debugging output
+
+0.10.2 2018-01-23  made hostchanel keepalive happy even when files get filtered
+
 0.10.1 2016-09-30  made file filter more robust
 
 0.10.0 2016-09-30  added minAge option

@@ -5,7 +5,7 @@ use LogFetcher::HostChannel;
 
 =head1 NAME
 
-LogFetcher::Command::sync - Ptp2Fibu3 syncer
+LogFetcher::Command::fetch - Log File Syncer
 
 =head1 SYNOPSIS
 
@@ -13,7 +13,7 @@ LogFetcher::Command::sync - Ptp2Fibu3 syncer
 
 =head1 DESCRIPTION
 
-Run the fibu3 syncer
+Run the logfetcher
 
 =cut
 
@@ -27,7 +27,6 @@ usage: $0 fetch [OPTIONS]
 These options are available:
 
   --verbose   talk about your work
-  --noaction  do not actually write to the rrd files
 
 EOF
 
@@ -40,8 +39,9 @@ has cfg => sub { shift->app->config->cfgHash };
 sub run {
     my $self   = shift;
     local @ARGV = @_ if scalar @_;
-    GetOptions(\%opt, 'daemon|d', 'noaction|no-action|n', 'verbose|v');
+    GetOptions(\%opt, 'verbose|v');
     if ($opt{verbose}){
+        $ENV{MOJO_LOG_LEVEL} = 'debug';
         $self->log->level('debug');
         $self->log->handle(\*STDOUT);
     }
@@ -106,7 +106,7 @@ S<Tobias Oetiker E<lt>tobi@oetiker.chE<gt>>
 
 =head1 HISTORY
 
- 2011-05-30 to 1.0 first version
+ 2015-05-30 to 1.0 first version
 
 =cut
 
