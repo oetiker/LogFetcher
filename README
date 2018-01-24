@@ -1,7 +1,7 @@
 LogFetcher
 ==========
 Version: 0.9.0
-Date: 2016-09-30
+Date: 2018-01-24
 
 Use SSH to fetch log files from a configurable list of machines and store them locally
 takeing into account that the logfiles on the remote hosts are rotated

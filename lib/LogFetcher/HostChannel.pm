@@ -324,6 +324,7 @@ sub transferFile {
     $transferFork->on(read => sub {
         my $transferFork = shift;
         my $chunk = shift;
+        $self->log->debug($self->name.": got ".length($chunk)." bytes on transferFork for $src");    
         $firstRead //= substr($chunk,1,256);
         if (not $transferStarted){
             $startTime = gettimeofday();
@@ -398,7 +399,8 @@ sub makeHostChannel {
         my $controlFork = shift;
         my $chunk = shift;
         $read .= $chunk;
-
+        $self->lastLogInfoLine(time);
+        $self->log->debug($self->name.": got ".length($chunk)." bytes on hostChannel");
         while ( $read =~ s/^(.*?)<LOG_FILE><(\d+)><(\d+)><(.+?)><NL>//s ){
             if (not $firstRead and $1){
                 $firstRead = $1;
@@ -428,7 +430,6 @@ sub makeHostChannel {
             my $dest = strftime($self->logFiles->[$id]{destinationFile},localtime($time));
             $dest =~ s/\$\{(RXMATCH_[1-5])\}/$match{$1}/g;
             $self->stats->{filesChecked}++;
-            $self->lastLogInfoLine(time);
             if (not $doneFiles{$dest} and not -f $dest){
                 $self->transferFile($file,$dest,$time);
             }

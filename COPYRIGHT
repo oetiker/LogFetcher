@@ -3,7 +3,7 @@ LogFetcher
 Use SSH to fetch log files from a configurable list of machines and store them locally
 takeing into account that the logfiles on the remote hosts are rotated
 
-Copyright (c) 2016, OETIKER+PARTNER AG
+Copyright (c) 2018, OETIKER+PARTNER AG
 
 All rights reserved.
 
